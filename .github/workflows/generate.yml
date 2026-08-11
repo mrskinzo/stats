@@ -1,0 +1,47 @@
+name: Generate Stats Images
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly, Mondays 13:05 UTC (~8am Central)
+    - cron: "5 13 * * 1"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: generate-stats
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # ACCESS_TOKEN is a minimal-scope classic PAT (read:user, user:email only).
+      # Falls back to the job token: public-only stats instead of a hard failure.
+      - name: Generate images
+        env:
+          ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN || github.token }}
+          GITHUB_ACTOR: ${{ github.repository_owner }}
+          EXCLUDE_FORKED_REPOS: "true"
+        run: python3 generate_images.py
+
+      - name: Commit updated images
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add generated/
+          git diff --cached --quiet || git commit -m "Update generated stats"
+          git pull --rebase origin main
+          git push
